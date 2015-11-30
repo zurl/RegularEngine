@@ -1,12 +1,18 @@
 #include<iostream>
 #include<memory>
 #include<vector>
+#include<unordered_set>
+#include<queue>
+#include<set>
+#include<bitset>
+#include<tuple>
+#include<cstdlib>
 using namespace std;
 enum class ope{
-	and,or,left,rep,able
+	and,or,left,rep,able,prep
 };
-const int POINT_MAX = 1000000;
-int global_point_now = 0;
+const int POINT_MAX = 50000;
+int global_point_now = -1;
 class edge{
 public:
 	edge *prev;
@@ -14,10 +20,11 @@ public:
 	char v,l,r;
 	edge() = default;
 	edge(int _t, char _v, edge *_prev) :
-		t(_t), v(_v), prev(_prev){}
+		t(_t), v(_v),l(0),r(0),prev(_prev){}
 	edge(int _t, char _v,char _l,char _r, edge *_prev) :
 		t(_t), v(_v),l(_l),r(_r),prev(_prev){}
-}*e[POINT_MAX];
+};
+edge *e[POINT_MAX];
 class Graph{
 public:	
 	int begin, end;
@@ -25,7 +32,7 @@ public:
 	void addEdge(int f, int t, char v){
 		e[f] = new edge(t, v, e[f]);
 	}
-	void addEdge(int f, int t, char l,char r,char v){
+	void addEdge(int f, int t, char l, char r, char v){
 		e[f] = new edge(t, v, l, r, e[f]);
 	}
 	Graph(char x){
@@ -60,31 +67,32 @@ public:
 	}
 	Graph(bool plan,Graph &a){
 		//rep
-		this->begin = global_point_now + 1;
-		this->end = global_point_now + 2;
-		global_point_now += 2;
-		addEdge(this->begin, a.begin, 0);
-		addEdge(a.end, this->end, 0);
-		addEdge(this->begin, this->end, 0);
-		addEdge(a.end, a.begin, 0);
+		if (plan){
+			//prep
+			this->begin = global_point_now + 1;
+			this->end = global_point_now + 2;
+			global_point_now += 2;
+			addEdge(this->begin, a.begin, 0);
+			addEdge(a.end, this->end, 0);
+			addEdge(a.end, a.begin, 0);
+		}
+		else{
+			//rep
+			this->begin = global_point_now + 1;
+			this->end = global_point_now + 2;
+			global_point_now += 2;
+			addEdge(this->begin, a.begin, 0);
+			addEdge(a.end, this->end, 0);
+			addEdge(this->begin, this->end, 0);
+			addEdge(a.end, a.begin, 0);
+		}
+		
 	}
 	void able(){
 		addEdge(this->begin,this->end, 0);
 	}
 };
 bool flag[10000];
-void dfs(int x){
-	flag[x] = 1;
-	cout << x << " : ";
-	for (edge *i = e[x]; i != nullptr; i = i->prev){
-		cout << i->t << " && " << i->v << "#";
-	}
-	cout << endl;
-	for (edge *i = e[x]; i != nullptr; i = i->prev){
-		if (!flag[i->t])
-		dfs(i->t);
-	}
-}
 class Reg{
 public:
 	Reg(string _reg) :reg(_reg){}
@@ -121,8 +129,9 @@ public:
 		return 1;
 	}
 	bool toNFA(){
-		vector<Graph> s; s.reserve(100000);
-		vector<ope> o; o.reserve(100000);
+		memset(accept, 0, sizeof(accept));
+		vector<Graph> s; s.reserve(50000);
+		vector<ope> o; o.reserve(50000);
 		auto pop = [&s, &o](){
 			switch (*(o.end()-1)){
 				case ope::and:
@@ -135,6 +144,9 @@ public:
 					break;
 				case ope::rep:
 					*(s.end() - 1) = Graph(0,*(s.end() - 1));
+					break;
+				case ope::prep:
+					*(s.end() - 1) = Graph(1, *(s.end() - 1));
 					break;
 				case ope::able:
 					(s.end() - 1)->able();
@@ -172,20 +184,36 @@ public:
 				case ')':
 					while (!o.empty() && *(o.end() - 1) != ope::left)pop();
 					o.pop_back();
+					if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
+						o.emplace_back(ope::and);
+					}
 					break;
 				case '?':
 					o.emplace_back(ope::able);
 					pop();
+					if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
+						o.emplace_back(ope::and);
+					}
 					break;
 				case '*':
 					o.emplace_back(ope::rep);
 					pop();
+					if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
+						o.emplace_back(ope::and);
+					}
+					break;
+				case '+':
+					o.emplace_back(ope::prep);
+					pop();
+					if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
+						o.emplace_back(ope::and);
+					}
 					break;
 				case '\\':
 					i++;
 				default:
 					s.emplace_back(reg[i]);
-					if (i == reg.length() || reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
+					if (i!= reg.length()-1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 						o.emplace_back(ope::and);
 					}
 					break;
@@ -194,24 +222,161 @@ public:
 		}
 		while (!o.empty())pop(); 
 		this->NFA = *(s.end() - 1);
+		POINT = global_point_now;
 		return 1; 
 	}
+	bool dfs(int &f, int x){
+		if (accept[x])accept[f] = accept[x];
+		for (edge *i = e[x]; i != nullptr; i = i->prev){
+			if (i->v != 0){
+				NFA.addEdge(f, i->t,i->l,i->r,i->v);
+			}
+			else{
+				dfs(f, i->t);
+			}
+		}
+		return 0;
+	}
+	bool dfsdel(edge *x){
+		if (x == nullptr)return 0;
+		if (x->prev != nullptr){
+			dfsdel(x->prev);
+		}
+		delete x;
+		return 0;
+	}
+	bool deEmpty(){
+		accept[NFA.end] = 1;
+		bitset<POINT_MAX> able;
+		able[NFA.begin] = true;
+		for (int k = 0; k <= POINT; k++){
+			for (edge *i = e[k]; i != nullptr; i = i->prev){
+				if (i->v != 0)able[i->t] = 1;
+			}
+		}
+		for (int k = 0; k <= POINT; k++){
+			if (able[k]){
+				dfs(k,k);
+			}
+		}
+		for (int k = 0; k <= POINT; k++){
+			if (!able[k]){
+				dfsdel(e[k]);
+				e[k] = nullptr;
+			}
+		}
+		for (int k = 0; k <= POINT; k++){
+			for (edge *i = e[k]; i != nullptr; i = i->prev){
+				while (i->prev != nullptr && i->prev->v == 0){
+						edge *t = i->prev;
+						i->prev = i->prev->prev;
+						delete t;
+				}
+			}
+			while (e[k] != nullptr && e[k]->v == 0){
+				edge *t = e[k];
+				e[k] = e[k]->prev;
+				delete t;
+			}
+		}
+		//simplify
+		int fx[POINT_MAX], gx[POINT_MAX], now = -1; 
+		memset(fx, 0, sizeof(fx));
+		memset(gx, 0, sizeof(gx));
+		for (int i=0; i <= POINT; i++){
+			if (able[i] == true)
+				fx[++now] = i;
+		}
+		for (int k = 0; k <= now; k++){
+			e[k] = e[fx[k]];
+		}
+		for (int k = 0; k <= now; k++){
+			accept[k] = accept[fx[k]];
+		}
+		for (int k = now; k >= 0; k--){
+			gx[fx[k]] = k;
+		}
+		
+		POINT = now;
+		for (int k = 0; k <= POINT; k++){
+			for (edge *i = e[k]; i != nullptr; i = i->prev){
+				i->t = gx[i->t];
+			}
+		}
+		NFA.begin = gx[NFA.begin];
+		return 0;
+	}
+	/*
+	bool toDFA(){
+		queue<bitset<POINT_MAX>> q; 
+		set<bitset<POINT_MAX>> s;
+		bitset<POINT_MAX> t;
+		t[NFA.begin] = 1;
+		s.emplace(t);
+		q.emplace(t);
+		
+		while (!q.empty()){
+			unordered_set<tuple<char, char, char>> ss;
+			bitset<POINT_MAX> t = q.front();
+			q.pop();
+			//get the convertion set
+			for (int i = 0; i <= POINT; i++)
+				if (t[i] == true)
+					for (edge *j = e[i]; j!= nullptr; j = j->prev)
+						if (j->v != 0)
+							ss.emplace(j->v, j->l, j->r);	
+			//get finished
+			for (auto &x : ss){
+				bitset<POINT_MAX> tt;
+				for (int i = 0; i <= POINT; i++)
+					if (t[i] == true)
+						for (edge *j = e[i]; j != nullptr; j = j->prev)
+							if (std::get<0>(x)==j->v
+								&& std::get<1>(x)==j->l
+								&& std::get<2>(x)==j->r){
+									tt[j->t] = 1;
+								}
+				if (s.find(tt) != s.end()){
+					s.emplace(tt);
+					q.emplace(tt);
+				}
+			}
+					
+			
 
-private:
-	string reg;
+		}
+	}
+	*/
 	Graph NFA, DFA;
+	int accept[POINT_MAX];
+private:
+	int POINT;
+	string reg;
 };
-/*def:ascii
-17:a-z
-18:A-Z
-19:0-9
-*/
+
+void dfs(Reg &reg, int x){
+	flag[x] = 1;
+	if (reg.accept[x])cout << "ACCEPT :" << reg.accept[x] << "::";
+	cout << x << " : ";
+	for (edge *i = e[x]; i != nullptr; i = i->prev){
+		cout << "-" << i->v<< ">" << i->t << "###";
+	}
+	cout << endl;
+	for (edge *i = e[x]; i != nullptr; i = i->prev){
+		if (!flag[i->t])
+			dfs(reg, i->t);
+	}
+}
 int main(){
-	Reg reg("[a-z]*");
+	Reg reg("-?[0-9]+(.[0-9]+)?");
 	//Reg reg("(a|b)c");
 	if (reg.check()){
-		Graph g = reg.toNFA();
-		dfs(g.begin);
+		reg.toNFA();
+		dfs(reg, reg.NFA.begin);
+		reg.deEmpty();
+		memset(flag, 0, sizeof(flag));
+		cout << "fuck" << endl;
+		dfs(reg,reg.NFA.begin);
 	}
 	cout << "welcome to the regular engine" << endl;
 	int a; cin >> a;
