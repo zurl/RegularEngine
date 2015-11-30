@@ -7,12 +7,15 @@
 #include<bitset>
 #include<tuple>
 #include<cstdlib>
+#include<map>
 using namespace std;
 enum class ope{
 	and,or,left,rep,able,prep
 };
 const int POINT_MAX = 50000;
 int global_point_now = -1;
+const int REV_RANGE = 17;
+const int POS_RANGE = 18;
 class edge{
 public:
 	edge *prev;
@@ -24,7 +27,16 @@ public:
 	edge(int _t, char _v,char _l,char _r, edge *_prev) :
 		t(_t), v(_v),l(_l),r(_r),prev(_prev){}
 };
-edge *e[POINT_MAX];
+edge *e[POINT_MAX], *de[POINT_MAX];
+class Dfa{
+public:
+	void addEdge(int f, int t, char v){
+		de[f] = new edge(t, v, de[f]);
+	}
+	void addEdge(int f, int t, char l, char r, char v){
+		de[f] = new edge(t, v, l, r, de[f]);
+	}
+};
 class Graph{
 public:	
 	int begin, end;
@@ -92,7 +104,7 @@ public:
 		addEdge(this->begin,this->end, 0);
 	}
 };
-bool flag[10000];
+bool flag[POINT_MAX];
 class Reg{
 public:
 	Reg(string _reg) :reg(_reg){}
@@ -130,8 +142,8 @@ public:
 	}
 	bool toNFA(){
 		memset(accept, 0, sizeof(accept));
-		vector<Graph> s; s.reserve(50000);
-		vector<ope> o; o.reserve(50000);
+		vector<Graph> s; s.reserve(POINT_MAX);
+		vector<ope> o; o.reserve(POINT_MAX);
 		auto pop = [&s, &o](){
 			switch (*(o.end()-1)){
 				case ope::and:
@@ -158,7 +170,7 @@ public:
 			switch (reg[i]){
 				case '[':
 					if (reg[i + 1] == '^'){
-						s.emplace_back(reg[i + 2], reg[i + 4], 17);
+						s.emplace_back(reg[i + 2], reg[i + 4], REV_RANGE);
 						i += 5;
 						if (i == reg.length() || reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 							o.emplace_back(ope::and);
@@ -166,7 +178,7 @@ public:
 						break;
 					}
 					else{
-						s.emplace_back(reg[i + 1], reg[i + 3], 18);
+						s.emplace_back(reg[i + 1], reg[i + 3], POS_RANGE);
 						i += 4;
 						if (i == reg.length() || reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 							o.emplace_back(ope::and);
@@ -306,54 +318,122 @@ public:
 		NFA.begin = gx[NFA.begin];
 		return 0;
 	}
-	/*
 	bool toDFA(){
-		queue<bitset<POINT_MAX>> q; 
-		set<bitset<POINT_MAX>> s;
-		bitset<POINT_MAX> t;
-		t[NFA.begin] = 1;
-		s.emplace(t);
-		q.emplace(t);
+		queue<pair<set<int>,int>> q;
+		map<set<int>,int> m;
+		set<int> t;
+		int now = 0;
+		t.insert(NFA.begin);
+		m.emplace(t,0);
+		q.emplace(t,0);
 		
 		while (!q.empty()){
-			unordered_set<tuple<char, char, char>> ss;
-			bitset<POINT_MAX> t = q.front();
+			set<tuple<char, char, char>> ss;
+			auto t = q.front();
 			q.pop();
 			//get the convertion set
-			for (int i = 0; i <= POINT; i++)
-				if (t[i] == true)
+			for (auto &i : t.first)
 					for (edge *j = e[i]; j!= nullptr; j = j->prev)
 						if (j->v != 0)
 							ss.emplace(j->v, j->l, j->r);	
 			//get finished
 			for (auto &x : ss){
-				bitset<POINT_MAX> tt;
-				for (int i = 0; i <= POINT; i++)
-					if (t[i] == true)
+				set<int> tt;
+				int acc = 0;
+				for (auto &i : t.first)
 						for (edge *j = e[i]; j != nullptr; j = j->prev)
 							if (std::get<0>(x)==j->v
 								&& std::get<1>(x)==j->l
 								&& std::get<2>(x)==j->r){
-									tt[j->t] = 1;
+									tt.emplace(j->t);
+									///*debug*/cout << "tt put in :: " << j->t << endl;
 								}
-				if (s.find(tt) != s.end()){
-					s.emplace(tt);
-					q.emplace(tt);
+						//	cout << "putend" << endl;
+							
+				auto temp = m.find(tt);
+				if (temp == m.end()){
+					q.emplace(tt,++now);
+					m.emplace(tt,now);
+					DFA.addEdge(t.second, now, get<1>(x), get<2>(x), get<0>(x));
+					//cout << "fuck::" << t.second << "shit::" << now << endl;
+				}
+				else{
+					DFA.addEdge(t.second,temp->second, get<1>(x), get<2>(x), get<0>(x));
+					//cout << "fuck::" << t.second << "shit::" << temp->second << endl;
+				}
+				
+			}
+		}
+		memset(daccept, 0, sizeof(daccept));
+		for (auto &x : m){
+			int acc = 0;
+			for (auto &y : x.first){
+				if (accept[y]){
+					if (acc){
+						//error
+						return -1;
+					}
+					else{
+						acc = accept[y];
+					}
 				}
 			}
-					
-			
-
+			daccept[x.second] = acc;
 		}
+		return 0;
 	}
-	*/
-	Graph NFA, DFA;
+	bool checkChar(edge *&a,char &b){
+		if (a->v == REV_RANGE && b <= a->l && b >= a->r
+			|| a->v == POS_RANGE && b >= a->l && b <= a->r
+			|| a->v == b)return 1;
+		return 0;
+	}
+	int accept(string str){
+		for (int k = 0; k <= str.length() - 1; k++){
+			int g = k, now = 0;
+			while (!daccept[now]){
+				int flag = -1;
+				for (edge *i = de[now]; i != nullptr; i = i->prev){
+					if (checkChar(i, str[g])){
+						flag = i->t;
+						break;
+					}
+				}
+				if (flag != -1){
+					now = flag;
+				}
+				else{
+					break;
+				}
+			}
+			if (daccept[now]){
+				cout << "Accept at : " << now << endl;
+			}
+		}
+		return 0;
+	}
+	Graph NFA;
+	Dfa DFA;
 	int accept[POINT_MAX];
+	int daccept[POINT_MAX];
 private:
 	int POINT;
 	string reg;
 };
-
+/* unit test
+void dddfs(Reg &reg, int x){
+	flag[x] = 1;
+	if (reg.daccept[x])cout << "ACCEPT :" << reg.daccept[x] << "::";
+	cout << x << " : ";
+	for (edge *i = de[x]; i != nullptr; i = i->prev){
+		cout << "-" << i->v << ">" << i->t << "###";
+	}
+	cout << endl;
+	for (edge *i = de[x]; i != nullptr; i = i->prev){
+		if (!flag[i->t])
+			dddfs(reg, i->t);
+	}
+}
 void dfs(Reg &reg, int x){
 	flag[x] = 1;
 	if (reg.accept[x])cout << "ACCEPT :" << reg.accept[x] << "::";
@@ -367,16 +447,24 @@ void dfs(Reg &reg, int x){
 			dfs(reg, i->t);
 	}
 }
+unit test end */
 int main(){
 	Reg reg("-?[0-9]+(.[0-9]+)?");
+	string str = "abc123abc-123abc123.5abc-123.5";
 	//Reg reg("(a|b)c");
 	if (reg.check()){
 		reg.toNFA();
-		dfs(reg, reg.NFA.begin);
+		//dfs(reg, reg.NFA.begin);
 		reg.deEmpty();
 		memset(flag, 0, sizeof(flag));
-		cout << "fuck" << endl;
-		dfs(reg,reg.NFA.begin);
+		//cout << "fuck" << endl;
+		//dfs(reg,reg.NFA.begin);
+		//cout << "shit bitch" << endl;
+		reg.toDFA();
+		memset(flag, 0, sizeof(flag));
+		//dddfs(reg,0);
+		//cout << "shit bitch" << endl;
+		reg.accept(str);
 	}
 	cout << "welcome to the regular engine" << endl;
 	int a; cin >> a;
