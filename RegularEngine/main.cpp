@@ -16,6 +16,7 @@ const int POINT_MAX = 50000;
 int global_point_now = -1;
 const int REV_RANGE = 17;
 const int POS_RANGE = 18;
+edge *e[POINT_MAX], *de[POINT_MAX];
 class edge{
 public:
 	edge *prev;
@@ -27,7 +28,6 @@ public:
 	edge(int _t, char _v,char _l,char _r, edge *_prev) :
 		t(_t), v(_v),l(_l),r(_r),prev(_prev){}
 };
-edge *e[POINT_MAX], *de[POINT_MAX];
 class Dfa{
 public:
 	void addEdge(int f, int t, char v){
@@ -141,7 +141,7 @@ public:
 		return 1;
 	}
 	bool toNFA(){
-		memset(accept, 0, sizeof(accept));
+		memset(naccept, 0, sizeof(naccept));
 		vector<Graph> s; s.reserve(POINT_MAX);
 		vector<ope> o; o.reserve(POINT_MAX);
 		auto pop = [&s, &o](){
@@ -238,7 +238,7 @@ public:
 		return 1; 
 	}
 	bool dfs(int &f, int x){
-		if (accept[x])accept[f] = accept[x];
+		if (naccept[x])naccept[f] = naccept[x];
 		for (edge *i = e[x]; i != nullptr; i = i->prev){
 			if (i->v != 0){
 				NFA.addEdge(f, i->t,i->l,i->r,i->v);
@@ -258,7 +258,7 @@ public:
 		return 0;
 	}
 	bool deEmpty(){
-		accept[NFA.end] = 1;
+		naccept[NFA.end] = 1;
 		bitset<POINT_MAX> able;
 		able[NFA.begin] = true;
 		for (int k = 0; k <= POINT; k++){
@@ -303,7 +303,7 @@ public:
 			e[k] = e[fx[k]];
 		}
 		for (int k = 0; k <= now; k++){
-			accept[k] = accept[fx[k]];
+			naccept[k] = naccept[fx[k]];
 		}
 		for (int k = now; k >= 0; k--){
 			gx[fx[k]] = k;
@@ -318,7 +318,7 @@ public:
 		NFA.begin = gx[NFA.begin];
 		return 0;
 	}
-	bool toDFA(){
+	int toDFA(){
 		queue<pair<set<int>,int>> q;
 		map<set<int>,int> m;
 		set<int> t;
@@ -368,13 +368,13 @@ public:
 		for (auto &x : m){
 			int acc = 0;
 			for (auto &y : x.first){
-				if (accept[y]){
+				if (naccept[y]){
 					if (acc){
 						//error
 						return -1;
 					}
 					else{
-						acc = accept[y];
+						acc = naccept[y];
 					}
 				}
 			}
@@ -388,39 +388,57 @@ public:
 			|| a->v == b)return 1;
 		return 0;
 	}
-	int accept(string str){
+	int accept(string str,bool greedy,bool acceptshift){
 		for (int k = 0; k <= str.length() - 1; k++){
-			int g = k, now = 0;
-			while (!daccept[now]){
-				int flag = -1;
+			int g = k, now = 0, onaccept = -1;
+			while (true){
+				int t = -1;
 				for (edge *i = de[now]; i != nullptr; i = i->prev){
 					if (checkChar(i, str[g])){
-						flag = i->t;
+						t = i->t;
+						g++;
 						break;
 					}
 				}
-				if (flag != -1){
-					now = flag;
+				if (t != -1){
+					now = t;
 				}
 				else{
+					if (greedy && onaccept != -1){
+						cout << "Accept at : " << k << " to " << g - 1 << endl;
+						if (acceptshift){
+							k = g - 1;
+						}
+					}
 					break;
 				}
-			}
-			if (daccept[now]){
-				cout << "Accept at : " << now << endl;
+				if (greedy){
+					if (daccept[now]){
+						onaccept = g;
+					}
+				}
+				else {
+					if (daccept[now]){
+						cout << "Accept at : " << k << " to " << g - 1 << endl;
+						if (acceptshift){
+							k = g-1;
+							break;
+						}
+					}
+				}			
 			}
 		}
 		return 0;
 	}
 	Graph NFA;
 	Dfa DFA;
-	int accept[POINT_MAX];
+	int naccept[POINT_MAX];
 	int daccept[POINT_MAX];
 private:
 	int POINT;
 	string reg;
 };
-/* unit test
+/*
 void dddfs(Reg &reg, int x){
 	flag[x] = 1;
 	if (reg.daccept[x])cout << "ACCEPT :" << reg.daccept[x] << "::";
@@ -434,9 +452,10 @@ void dddfs(Reg &reg, int x){
 			dddfs(reg, i->t);
 	}
 }
+
 void dfs(Reg &reg, int x){
 	flag[x] = 1;
-	if (reg.accept[x])cout << "ACCEPT :" << reg.accept[x] << "::";
+	if (reg.naccept[x])cout << "ACCEPT :" << reg.naccept[x] << "::";
 	cout << x << " : ";
 	for (edge *i = e[x]; i != nullptr; i = i->prev){
 		cout << "-" << i->v<< ">" << i->t << "###";
@@ -446,11 +465,10 @@ void dfs(Reg &reg, int x){
 		if (!flag[i->t])
 			dfs(reg, i->t);
 	}
-}
-unit test end */
+} */
 int main(){
-	Reg reg("-?[0-9]+(.[0-9]+)?");
-	string str = "abc123abc-123abc123.5abc-123.5";
+	Reg reg("[0-9]+");
+	string str = "123456ml123456lp";
 	//Reg reg("(a|b)c");
 	if (reg.check()){
 		reg.toNFA();
@@ -464,7 +482,7 @@ int main(){
 		memset(flag, 0, sizeof(flag));
 		//dddfs(reg,0);
 		//cout << "shit bitch" << endl;
-		reg.accept(str);
+		reg.accept(str,false,false);
 	}
 	cout << "welcome to the regular engine" << endl;
 	int a; cin >> a;
