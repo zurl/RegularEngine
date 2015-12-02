@@ -13,10 +13,10 @@ enum class ope{
 	and,or,left,rep,able,prep
 };
 const int POINT_MAX = 50000;
-int global_point_now = -1;
+int global_point_now = 0;
 const int REV_RANGE = 17;
 const int POS_RANGE = 18;
-edge *e[POINT_MAX], *de[POINT_MAX];
+
 class edge{
 public:
 	edge *prev;
@@ -27,7 +27,7 @@ public:
 		t(_t), v(_v),l(0),r(0),prev(_prev){}
 	edge(int _t, char _v,char _l,char _r, edge *_prev) :
 		t(_t), v(_v),l(_l),r(_r),prev(_prev){}
-};
+};edge *e[POINT_MAX], *de[POINT_MAX];
 class Dfa{
 public:
 	void addEdge(int f, int t, char v){
@@ -109,39 +109,21 @@ class Reg{
 public:
 	Reg(string _reg) :reg(_reg){}
 	Reg() : Reg(""){}
-	bool check(){
-		for (int i = 0; i <= reg.length() - 1; i++){
-			if (reg[i] == '\\'&&i == reg.length() - 1)return 0;
-			if (reg[i] == '\\')i += 2;
-			if (i == reg.length() - 1)break;
-			if (reg[i] == '|')
-				if (reg[i + 1] == '|' || reg[i + 1] == '*'
-					|| reg[i + 1] == '?' || reg[i + 1] == ')')return 0;
-			if (reg[i] == '*' || reg[i]=='?')
-				if (i == 0)return 0;
-			if (reg[i] == '(')
-				if (reg[i + 1] == ')' || reg[i + 1] == '|' || reg[i + 1] == '*' || reg[i + 1] == '?')return 0;
-			if (reg[i] == '['){
-				if (reg[i+1] == '^'){
-					if (reg[i + 3] != '-' || reg[i + 5] != ']')return 0;
-				}
-				else{
-					if (reg[i + 2] != '-' || reg[i + 4] != ']')return 0;
-				}
-			}
-			
-		}
-		int now = 0;
-		for (int i = 0; i <= reg.length() - 1; i++){
-			if (reg[i] == '(')now++;
-			if (reg[i] == ')')now--;
-			if (now < 0)return 0;
-		}
-		if (now != 0)return 0;
-		return 1;
+	bool init(){
+		memset(NFAaccept, 0, sizeof(NFAaccept));
+		return true;
 	}
-	bool toNFA(){
-		memset(naccept, 0, sizeof(naccept));
+	bool addRule(string x,int code){
+		reg = x; 
+		if (this->check()){
+			this->toENFA();
+			NFA.addEdge(0, NFA.begin, 0);
+			NFAaccept[NFA.end] = code;
+			return 1;
+		}
+		else return 0;
+	}
+	bool toENFA(){	
 		vector<Graph> s; s.reserve(POINT_MAX);
 		vector<ope> o; o.reserve(POINT_MAX);
 		auto pop = [&s, &o](){
@@ -237,30 +219,9 @@ public:
 		POINT = global_point_now;
 		return 1; 
 	}
-	bool dfs(int &f, int x){
-		if (naccept[x])naccept[f] = naccept[x];
-		for (edge *i = e[x]; i != nullptr; i = i->prev){
-			if (i->v != 0){
-				NFA.addEdge(f, i->t,i->l,i->r,i->v);
-			}
-			else{
-				dfs(f, i->t);
-			}
-		}
-		return 0;
-	}
-	bool dfsdel(edge *x){
-		if (x == nullptr)return 0;
-		if (x->prev != nullptr){
-			dfsdel(x->prev);
-		}
-		delete x;
-		return 0;
-	}
-	bool deEmpty(){
-		naccept[NFA.end] = 1;
+	bool toNFA(){
 		bitset<POINT_MAX> able;
-		able[NFA.begin] = true;
+		able[0] = true;
 		for (int k = 0; k <= POINT; k++){
 			for (edge *i = e[k]; i != nullptr; i = i->prev){
 				if (i->v != 0)able[i->t] = 1;
@@ -303,7 +264,7 @@ public:
 			e[k] = e[fx[k]];
 		}
 		for (int k = 0; k <= now; k++){
-			naccept[k] = naccept[fx[k]];
+			NFAaccept[k] = NFAaccept[fx[k]];
 		}
 		for (int k = now; k >= 0; k--){
 			gx[fx[k]] = k;
@@ -315,7 +276,7 @@ public:
 				i->t = gx[i->t];
 			}
 		}
-		NFA.begin = gx[NFA.begin];
+		NFA.begin = gx[0];
 		return 0;
 	}
 	int toDFA(){
@@ -336,7 +297,7 @@ public:
 					for (edge *j = e[i]; j!= nullptr; j = j->prev)
 						if (j->v != 0)
 							ss.emplace(j->v, j->l, j->r);	
-			//get finished
+			//get target set
 			for (auto &x : ss){
 				set<int> tt;
 				int acc = 0;
@@ -344,55 +305,41 @@ public:
 						for (edge *j = e[i]; j != nullptr; j = j->prev)
 							if (std::get<0>(x)==j->v
 								&& std::get<1>(x)==j->l
-								&& std::get<2>(x)==j->r){
-									tt.emplace(j->t);
-									///*debug*/cout << "tt put in :: " << j->t << endl;
-								}
-						//	cout << "putend" << endl;
-							
+								&& std::get<2>(x)==j->r)
+									tt.emplace(j->t);		
+				//checking duplicate		
 				auto temp = m.find(tt);
 				if (temp == m.end()){
 					q.emplace(tt,++now);
 					m.emplace(tt,now);
 					DFA.addEdge(t.second, now, get<1>(x), get<2>(x), get<0>(x));
-					//cout << "fuck::" << t.second << "shit::" << now << endl;
 				}
 				else{
 					DFA.addEdge(t.second,temp->second, get<1>(x), get<2>(x), get<0>(x));
-					//cout << "fuck::" << t.second << "shit::" << temp->second << endl;
 				}
 				
 			}
 		}
-		memset(daccept, 0, sizeof(daccept));
+		//accept adjustment
+		memset(DFAaccept, 0, sizeof(DFAaccept));
 		for (auto &x : m){
 			int acc = 0;
 			for (auto &y : x.first){
-				if (naccept[y]){
-					if (acc){
-						//error
-						return -1;
-					}
-					else{
-						acc = naccept[y];
-					}
+				if (NFAaccept[y]){
+					if (!acc) acc = NFAaccept[y]; 
+					else return -1;
 				}
 			}
-			daccept[x.second] = acc;
+			DFAaccept[x.second] = acc;
 		}
 		return 0;
 	}
-	bool checkChar(edge *&a,char &b){
-		if (a->v == REV_RANGE && b <= a->l && b >= a->r
-			|| a->v == POS_RANGE && b >= a->l && b <= a->r
-			|| a->v == b)return 1;
-		return 0;
-	}
-	int accept(string str,bool greedy,bool acceptshift){
+	int accept(string str,bool greedy,bool shift){
 		for (int k = 0; k <= str.length() - 1; k++){
-			int g = k, now = 0, onaccept = -1;
+			int g = k, now = 0, onNFAaccept = -1;
 			while (true){
 				int t = -1;
+				//accept char finding
 				for (edge *i = de[now]; i != nullptr; i = i->prev){
 					if (checkChar(i, str[g])){
 						t = i->t;
@@ -400,90 +347,110 @@ public:
 						break;
 					}
 				}
-				if (t != -1){
-					now = t;
-				}
+				//accept checking
+				if (t != -1) now = t;
 				else{
-					if (greedy && onaccept != -1){
-						cout << "Accept at : " << k << " to " << g - 1 << endl;
-						if (acceptshift){
+					if (greedy && onNFAaccept != -1){
+						//greedy accept
+						cout << "Accept "  << onNFAaccept  << " at : " << k << " to " << g - 1 << endl;
+						if (shift){
 							k = g - 1;
 						}
 					}
 					break;
 				}
-				if (greedy){
-					if (daccept[now]){
-						onaccept = g;
-					}
-				}
-				else {
-					if (daccept[now]){
-						cout << "Accept at : " << k << " to " << g - 1 << endl;
-						if (acceptshift){
-							k = g-1;
-							break;
-						}
-					}
-				}			
+				if (greedy) { if (DFAaccept[now])onNFAaccept = now; }
+				else 
+				if (DFAaccept[now]){
+					//ungreedy accept
+					cout << "Accept "<<DFAaccept[now]<<" at : " << k << " to " << g - 1 << endl;
+					if (shift){
+						k = g-1;
+						break;
+					}	
+				}						
 			}
 		}
 		return 0;
 	}
-	Graph NFA;
-	Dfa DFA;
-	int naccept[POINT_MAX];
-	int daccept[POINT_MAX];
 private:
+	bool dfs(int &f, int x){
+		if (NFAaccept[x])NFAaccept[f] = NFAaccept[x];
+		for (edge *i = e[x]; i != nullptr; i = i->prev){
+			if (i->v != 0){
+				NFA.addEdge(f, i->t,i->l,i->r,i->v);
+			}
+			else{
+				dfs(f, i->t);
+			}
+		}
+		return 0;
+	}
+	bool dfsdel(edge *x){
+		if (x == nullptr)return 0;
+		if (x->prev != nullptr){
+			dfsdel(x->prev);
+		}
+		delete x;
+		return 0;
+	}
+	bool checkChar(edge *&a,char &b){
+		if (a->v == REV_RANGE && (b <= a->l || b >= a->r)
+			|| a->v == POS_RANGE && b >= a->l && b <= a->r
+			|| a->v == b)return 1;
+		return 0;
+	}
+	bool check(){
+		//binary operator rule check
+		for (int i = 0; i <= reg.length() - 1; i++){
+			if (reg[i] == '\\'&&i == reg.length() - 1)return 0;
+			if (reg[i] == '\\')i += 2;
+			if (i == reg.length() - 1)break;
+			if (reg[i] == '|')
+				if (reg[i + 1] == '|' || reg[i + 1] == '*'
+					|| reg[i + 1] == '?' || reg[i + 1] == ')')return 0;
+			if (reg[i] == '*' || reg[i]=='?')
+				if (i == 0)return 0;
+			if (reg[i] == '(')
+				if (reg[i + 1] == ')' || reg[i + 1] == '|' || reg[i + 1] == '*' || reg[i + 1] == '?')return 0;
+			if (reg[i] == '['){
+				if (reg[i + 1] == '^'){
+					if (reg[i + 3] != '-' || reg[i + 5] != ']')return 0;
+				}					
+				else if(reg[i + 2] != '-' || reg[i + 4] != ']')return 0;
+			}
+			
+		}
+		//backet match check
+		int now = 0;
+		for (int i = 0; i <= reg.length() - 1; i++){
+			if (reg[i] == '(')now++;
+			if (reg[i] == ')')now--;
+			if (now < 0)return 0;
+		}
+		if (now != 0)return 0;
+		return 1;
+	}
 	int POINT;
 	string reg;
+	Graph NFA;
+	Dfa DFA;
+	
+	int NFAaccept[POINT_MAX];
+	int DFAaccept[POINT_MAX];
 };
-/*
-void dddfs(Reg &reg, int x){
-	flag[x] = 1;
-	if (reg.daccept[x])cout << "ACCEPT :" << reg.daccept[x] << "::";
-	cout << x << " : ";
-	for (edge *i = de[x]; i != nullptr; i = i->prev){
-		cout << "-" << i->v << ">" << i->t << "###";
-	}
-	cout << endl;
-	for (edge *i = de[x]; i != nullptr; i = i->prev){
-		if (!flag[i->t])
-			dddfs(reg, i->t);
-	}
-}
 
-void dfs(Reg &reg, int x){
-	flag[x] = 1;
-	if (reg.naccept[x])cout << "ACCEPT :" << reg.naccept[x] << "::";
-	cout << x << " : ";
-	for (edge *i = e[x]; i != nullptr; i = i->prev){
-		cout << "-" << i->v<< ">" << i->t << "###";
-	}
-	cout << endl;
-	for (edge *i = e[x]; i != nullptr; i = i->prev){
-		if (!flag[i->t])
-			dfs(reg, i->t);
-	}
-} */
 int main(){
-	Reg reg("[0-9]+");
-	string str = "123456ml123456lp";
-	//Reg reg("(a|b)c");
-	if (reg.check()){
-		reg.toNFA();
-		//dfs(reg, reg.NFA.begin);
-		reg.deEmpty();
-		memset(flag, 0, sizeof(flag));
-		//cout << "fuck" << endl;
-		//dfs(reg,reg.NFA.begin);
-		//cout << "shit bitch" << endl;
-		reg.toDFA();
-		memset(flag, 0, sizeof(flag));
-		//dddfs(reg,0);
-		//cout << "shit bitch" << endl;
-		reg.accept(str,false,false);
-	}
+	Reg reg;
+	string str = "ifelsefuck123456";
+	reg.init();
+	reg.addRule("if", 1);
+	reg.addRule("else", 2);
+	reg.addRule("fuck", 3);
+	reg.addRule("[0-9]*", 4);
+	reg.toNFA();
+	reg.toDFA();
+	reg.accept(str,false,false);
 	cout << "welcome to the regular engine" << endl;
 	int a; cin >> a;
 	return 0;
