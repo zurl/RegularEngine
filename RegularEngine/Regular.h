@@ -13,20 +13,9 @@ using namespace std;
 enum class ope{
 	and, or, left, rep, able, prep
 };
-const int POINT_MAX = 50000;
-int global_point_now = 0;
-const int REV_RANGE = 17;
-const int POS_RANGE = 18;
-
-const int __BigLetter = -1;
-const int __SmallLetter = -2;
-const int __AllLetter = -3;
-const int __Number = -4;
-const int __LetterNumber = -5;
-const int __AllChar = -6;
-const int __Space = -6;
-
-int SYSTEM_MATCHRULE_COUNT = -7;
+const int POINT_MAX = 5000;
+char preDef[] = { 'w', 'b', 's', 'd', 'p', 'a', 'l' };
+const int preDefCount = 7;
 
 
 class edge{
@@ -37,74 +26,48 @@ public:
 	edge() = default;
 	edge(int _t, char _v, edge *_prev) :
 		t(_t), v(_v), prev(_prev){}
-}; edge *e[POINT_MAX], *de[POINT_MAX];
-class Dfa{
-public:
-	void addEdge(int f, int t, char v){
-		de[f] = new edge(t, v, de[f]);
-	}
-};
-class Graph{
+}; 
+class GraphPart{
 public:
 	int begin, end;
-	Graph() = default;
+	GraphPart() = default;
+	GraphPart(int _begin, int _end)
+		:begin(_begin), end(_end){}
+};
+class Graph{
+private:
+	int pointCount = 0;
+public:
+	edge *e[POINT_MAX];
+	bool acc[POINT_MAX];
+	Graph(){
+		memset(acc, 0, sizeof(acc));
+	}
+	~Graph(){
+		for (int i = 0; i <= pointCount; i++){
+			edge *j = e[i];
+			if (j == nullptr)continue;
+			while (j->prev != nullptr){
+				edge *t = j->prev;
+				delete j;
+				j = t;
+			}
+		}
+	}
 	void addEdge(int f, int t, char v){
 		e[f] = new edge(t, v, e[f]);
-		cout << "add" << int(v) << endl;
 	}
-	Graph(char x){
-		addEdge(global_point_now + 1, global_point_now + 2, x);
-		this->begin = global_point_now + 1;
-		this->end = global_point_now + 2;
-		global_point_now += 2;
+	int get(){
+		pointCount++;
+		return pointCount;
 	}
-	Graph(bool plan, Graph &a, Graph &b){
-		if (plan){
-			//or
-			this->begin = global_point_now + 1;
-			this->end = global_point_now + 2;
-			global_point_now += 2;
-			addEdge(this->begin, a.begin, 0);
-			addEdge(this->begin, b.begin, 0);
-			addEdge(a.end, this->end, 0);
-			addEdge(b.end, this->end, 0);
-		}
-		else{
-			//and
-			this->begin = a.begin;
-			this->end = b.end;
-			addEdge(a.end, b.begin, 0);
-		}
+	int now(){
+		return pointCount;
 	}
-	Graph(bool plan, Graph &a){
-		//rep
-		if (plan){
-			//prep
-			this->begin = global_point_now + 1;
-			this->end = global_point_now + 2;
-			global_point_now += 2;
-			addEdge(this->begin, a.begin, 0);
-			addEdge(a.end, this->end, 0);
-			addEdge(a.end, a.begin, 0);
-		}
-		else{
-			//rep
-			this->begin = global_point_now + 1;
-			this->end = global_point_now + 2;
-			global_point_now += 2;
-			addEdge(this->begin, a.begin, 0);
-			addEdge(a.end, this->end, 0);
-			addEdge(this->begin, this->end, 0);
-			addEdge(a.end, a.begin, 0);
-		}
-
-	}
-	void able(){
-		addEdge(this->begin, this->end, 0);
+	void adjust(int a){
+		pointCount = a;
 	}
 };
-bool flag[POINT_MAX];
-
 class MatchRule{
 	bool type = 0;
 	bool reverse = 0;
@@ -120,73 +83,109 @@ public:
 		else return reverse ^ (a >= l && a <= r);		
 	}
 };
-
 class Reg{
 public:
-	Reg(string _reg) :reg(_reg){}
-	Reg() : Reg(""){}
-	bool init(){
-		memset(NFAaccept, 0, sizeof(NFAaccept));
-
-		//Preserved Rules Initializing
-		this->checkList.emplace(__LetterNumber, vector<MatchRule>{MatchRule(0, 'a', 'z'), MatchRule(0, 'A', 'Z'), MatchRule(0, '0','9')});		
-		this->checkList.emplace(__SmallLetter, vector<MatchRule>{MatchRule(0, 'a', 'z')});
-		this->checkList.emplace(__BigLetter, vector<MatchRule>{MatchRule(0, 'A', 'Z')});
-		this->checkList.emplace(__AllLetter, vector<MatchRule>{MatchRule(0, 'a', 'z'), MatchRule(0, 'A', 'Z')});
-		this->checkList.emplace(__Number, vector<MatchRule>{MatchRule(0, '0', '9')});
-		this->checkList.emplace(__AllChar, vector<MatchRule>{MatchRule(0, 1, 127)});
-		this->checkList.emplace(__Space, vector<MatchRule>{MatchRule(0, ' ')});
-
-		return true;
+	Reg(){
+		addPreDef();
 	}
+	~Reg(){}
 	bool addRule(string x, int code){
-		reg = x;
-		if (this->check()){
-			this->toENFA();
-			NFA.addEdge(0, NFA.begin, 0);
-			NFAaccept[NFA.end] = code;
+		if (this->isReady)return 0;
+		if (this->check(x)){
+			this->toENFA(x);
+			NFAs.addEdge(0, NFA.begin, 0);
+			NFAs.acc[NFA.end] = code;
+			this->hasRule = 1;
 			return 1;
 		}
 		else return 0;
 	}
-	bool toENFA(){
-		vector<Graph> s; s.reserve(POINT_MAX);
-		vector<ope> o; o.reserve(POINT_MAX);
-		auto pop = [&s, &o](){
-			switch (*(o.end() - 1)){
-			case ope::and:
-				*(s.end() - 2) = Graph(0, *(s.end() - 2), *(s.end() - 1));
-				s.pop_back();
-				break;
-			case ope::or:
-				*(s.end() - 2) = Graph(1, *(s.end() - 2), *(s.end() - 1));
-				s.pop_back();
-				break;
-			case ope::rep:
-				*(s.end() - 1) = Graph(0, *(s.end() - 1));
-				break;
-			case ope::prep:
-				*(s.end() - 1) = Graph(1, *(s.end() - 1));
-				break;
-			case ope::able:
-				(s.end() - 1)->able();
-				break;
+	bool ready(){
+		if (this->hasRule){
+			this->toNFA();
+			this->toDFA();
+			this->isReady = 1;
+			return 1;
+		}
+		return 0;
+	}
+	bool accept(string str,bool(*callback)(int code)){
+		if (!this->isReady)return 0;
+		for (unsigned k = 0; k <= str.length() - 1; k++){
+			int g = k, now = 0, onacc = -1;
+			while (true){
+				int t = -1;
+				//accept char finding
+				for (edge *i = DFA.e[now]; i != nullptr; i = i->prev){
+					if (acceptChar(str[g], i->v)){
+						t = i->t;
+						g++;
+						break;
+					}
+				}
+				//accept checking
+				if (t != -1) now = t;
+				else{
+					if (greedy && onacc != -1){
+						//greedy accept
+						callback(onacc);
+						if (shift){
+							k = g - 1;
+						}
+					}
+					break;
+				}
+				if (greedy) { if (DFA.acc[now])onacc = DFA.acc[now]; }
+				else
+				if (DFA.acc[now]){
+					//ungreedy accept
+					callback(DFA.acc[now]);
+					if (shift){
+						k = g - 1;
+						break;
+					}
+				}
 			}
-			o.pop_back();
-		};
+		}
+		return 0;
+	}
+	void setOpition(bool _greedy,bool _shift){
+		greedy = _greedy;
+		shift = _shift;
+	}
+private:
+	void addPreDef(){
+		this->checkList.emplace(preDef[0], vector<MatchRule>{MatchRule(0, 'a', 'z'), MatchRule(0, 'A', 'Z'), MatchRule(0, '0', '9')});
+		//Small Letter
+		this->checkList.emplace(preDef[1], vector<MatchRule>{MatchRule(0, 'a', 'z')});
+		//Big Letter
+		this->checkList.emplace(preDef[2], vector<MatchRule>{MatchRule(0, 'A', 'Z')});
+		//All Letter
+		this->checkList.emplace(preDef[3], vector<MatchRule>{MatchRule(0, 'a', 'z'), MatchRule(0, 'A', 'Z')});
+		//Number
+		this->checkList.emplace(preDef[4], vector<MatchRule>{MatchRule(0, '0', '9')});
+		//All Char
+		this->checkList.emplace(preDef[5], vector<MatchRule>{MatchRule(0, 1, 127)});
+		//Space
+		this->checkList.emplace(preDef[6], vector<MatchRule>{MatchRule(0, ' ')});
+	}
+	bool toENFA(string &reg){
+		vector<GraphPart> s; s.reserve(POINT_MAX);
+		vector<ope> o; o.reserve(POINT_MAX);
+
 		for (int i = 0; i <= reg.length() - 1; i++){
 			switch (reg[i]){
 			case '[':
 				//waiting for modifing
 			case '|':
-				while (!o.empty() && *(o.end() - 1) != ope::left)pop();
+				while (!o.empty() && *(o.end() - 1) != ope::left)popStack(s, o);
 				o.emplace_back(ope::or);
 				break;
 			case '(':
 				o.emplace_back(ope::left);
 				break;
 			case ')':
-				while (!o.empty() && *(o.end() - 1) != ope::left)pop();
+				while (!o.empty() && *(o.end() - 1) != ope::left)popStack(s, o);
 				o.pop_back();
 				if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 					o.emplace_back(ope::and);
@@ -194,46 +193,38 @@ public:
 				break;
 			case '?':
 				o.emplace_back(ope::able);
-				pop();
+				popStack(s, o);
 				if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 					o.emplace_back(ope::and);
 				}
 				break;
 			case '*':
 				o.emplace_back(ope::rep);
-				pop();
+				popStack(s, o);
 				if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 					o.emplace_back(ope::and);
 				}
 				break;
 			case '+':
 				o.emplace_back(ope::prep);
-				pop();
+				popStack(s, o);
 				if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 					o.emplace_back(ope::and);
 				}
 				break;
 			case '\\':
+				//process the preDefine chars;
 				i++;
-				switch (reg[i]){
-					//escaped Chars
-				case 'w':
-					reg[i] = __LetterNumber;break;
-				case 'b':
-					reg[i] = __BigLetter;break;
-				case 's':
-					reg[i] = __SmallLetter;break;
-				case 'd':
-					reg[i] = __Number;break;
-				case 'p':
-					reg[i] = __Space; break;
-				case 'a':
-					reg[i] = __AllChar; break;
-				case 'l':
-					reg[i] = __AllLetter; break;
-				}				
+				bool flag = 0;
+				for (int i = 0; i < preDefCount; i++){
+					if (preDef[i] == reg[i]){
+						reg[i] = -i;
+						flag = 1;
+						break;
+					}
+				}
 			default:
-				s.emplace_back(reg[i]);
+				s.emplace_back(addGraph(reg[i]));
 				if (i != reg.length() - 1 && reg[i + 1] != ')' && reg[i + 1] != '+'&&reg[i + 1] != '?'&&reg[i + 1] != '*'&&reg[i + 1] != '|'){
 					o.emplace_back(ope::and);
 				}
@@ -241,45 +232,44 @@ public:
 			}
 
 		}
-		while (!o.empty())pop();
+		while (!o.empty())popStack(s, o);
 		this->NFA = *(s.end() - 1);
-		POINT = global_point_now;
 		return 1;
 	}
 	bool toNFA(){
 		bitset<POINT_MAX> able;
 		able[0] = true;
 		//find the points set that can arrive
-		for (int k = 0; k <= POINT; k++){
-			for (edge *i = e[k]; i != nullptr; i = i->prev){
+		for (int k = 0; k <= NFAs.now(); k++){
+			for (edge *i = NFAs.e[k]; i != nullptr; i = i->prev){
 				if (i->v != 0)able[i->t] = 1;
 			}
 		}
 		//add edge from rootPoint to the point that can reach through epsilon
-		for (int k = 0; k <= POINT; k++){
+		for (int k = 0; k <= NFAs.now(); k++){
 			if (able[k]){
 				dfsAddEdge(k, k);
 			}
 		}
 		//recursive delete edge that are epsilon
-		for (int k = 0; k <= POINT; k++){
+		for (int k = 0; k <= NFAs.now(); k++){
 			if (!able[k]){
-				dfsDeleteEpsilonEdge(e[k]);
-				e[k] = nullptr;
+				dfsDeleteEpsilonEdge(NFAs.e[k]);
+				NFAs.e[k] = nullptr;
 			}
 		}
 		//delete points that cant reach 
-		for (int k = 0; k <= POINT; k++){
-			for (edge *i = e[k]; i != nullptr; i = i->prev){
+		for (int k = 0; k <= NFAs.now(); k++){
+			for (edge *i = NFAs.e[k]; i != nullptr; i = i->prev){
 				while (i->prev != nullptr && i->prev->v == 0){
 					edge *t = i->prev;
 					i->prev = i->prev->prev;
 					delete t;
 				}
 			}
-			while (e[k] != nullptr && e[k]->v == 0){
-				edge *t = e[k];
-				e[k] = e[k]->prev;
+			while (NFAs.e[k] != nullptr && NFAs.e[k]->v == 0){
+				edge *t = NFAs.e[k];
+				NFAs.e[k] = NFAs.e[k]->prev;
 				delete t;
 			}
 		}
@@ -288,59 +278,56 @@ public:
 		int fx[POINT_MAX], gx[POINT_MAX], now = -1;
 		memset(fx, 0, sizeof(fx));
 		memset(gx, 0, sizeof(gx));
-		for (int i = 0; i <= POINT; i++){
+		for (int i = 0; i <= NFAs.now(); i++){
 			if (able[i] == true)
 				fx[++now] = i;
 		}
 		for (int k = 0; k <= now; k++){
-			e[k] = e[fx[k]];
+			NFAs.e[k] = NFAs.e[fx[k]];
 		}
 		for (int k = 0; k <= now; k++){
-			NFAaccept[k] = NFAaccept[fx[k]];
+			NFAs.acc[k] = NFAs.acc[fx[k]];
 		}
 		for (int k = now; k >= 0; k--){
 			gx[fx[k]] = k;
 		}
 
-		POINT = now;
-		for (int k = 0; k <= POINT; k++){
-			for (edge *i = e[k]; i != nullptr; i = i->prev){
+		NFAs.adjust(now);
+		for (int k = 0; k <= NFAs.now(); k++){
+			for (edge *i = NFAs.e[k]; i != nullptr; i = i->prev){
 				i->t = gx[i->t];
 			}
 		}
 		NFA.begin = gx[0];
 		return 0;
 	}
-	int toDFA(){
+	bool toDFA(){
 		queue<pair<set<int>, int>> q;
 		map<set<int>, int> m;
-		set<int> t;
 		int now = 0;
-		t.insert(NFA.begin);
-		m.emplace(t, 0);
-		q.emplace(t, 0);
+		m.emplace(set<int>{NFA.begin}, 0);
+		q.emplace(set<int>{NFA.begin}, 0);
 		while (!q.empty()){
-			set<char> ss;
+			set<char> charSet;
 			auto t = q.front();
 			q.pop();
 			//get the convertion set
 			for (auto &i : t.first)
-			for (edge *j = e[i]; j != nullptr; j = j->prev)
-				ss.emplace(j->v);
+			for (edge *j = NFAs.e[i]; j != nullptr; j = j->prev)
+				charSet.emplace(j->v);
 			//get target set
-			for (auto &x : ss){
-				set<int> tt;
+			for (auto &x : charSet){
+				set<int> tempSet;
 				int acc = 0;
 				for (auto &i : t.first)
-				for (edge *j = e[i]; j != nullptr; j = j->prev)
-				if (x == j->v)
-					tt.emplace(j->t);
+				for (edge *j = NFAs.e[i]; j != nullptr; j = j->prev)
+				if (x == j->v)tempSet.emplace(j->t);
 				//checking duplicate		
-				auto temp = m.find(tt);
+				auto temp = m.find(tempSet);
 				if (temp == m.end()){
-					q.emplace(tt, ++now);
-					m.emplace(tt, now);
-					DFA.addEdge(t.second, now,  x);
+					q.emplace(tempSet, ++now);
+					m.emplace(tempSet, now);
+					DFA.addEdge(t.second, now, x);
 				}
 				else{
 					DFA.addEdge(t.second, temp->second, x);
@@ -349,16 +336,16 @@ public:
 			}
 		}
 		//accept adjustment
-		memset(DFAaccept, 0, sizeof(DFAaccept));
+		memset(DFA.acc, 0, sizeof(DFA.acc));
 		for (auto &x : m){
 			int acc = 0;
 			for (auto &y : x.first){
-				if (NFAaccept[y]){
-					if (!acc) acc = NFAaccept[y];
+				if (NFAs.acc[y]){
+					if (!acc) acc = NFAs.acc[y];
 					else return -1;
 				}
 			}
-			DFAaccept[x.second] = acc;
+			DFA.acc[x.second] = acc;
 		}
 		return 0;
 	}
@@ -373,52 +360,12 @@ public:
 			return result;
 		}
 	}
-	int accept(string str, bool greedy, bool shift, bool(*callback)(int code)){
-		for (unsigned k = 0; k <= str.length() - 1; k++){
-			int g = k, now = 0, onNFAaccept = -1;
-			while (true){
-				int t = -1;
-				//accept char finding
-				for (edge *i = de[now]; i != nullptr; i = i->prev){
-					if (acceptChar(str[g], i->v)){
-						t = i->t;
-						g++;
-						break;
-					}
-				}
-				//accept checking
-				if (t != -1) now = t;
-				else{
-					if (greedy && onNFAaccept != -1){
-						//greedy accept
-						callback(onNFAaccept);
-						if (shift){
-							k = g - 1;
-						}
-					}
-					break;
-				}
-				if (greedy) { if (DFAaccept[now])onNFAaccept = DFAaccept[now]; }
-				else
-				if (DFAaccept[now]){
-					//ungreedy accept
-					callback(DFAaccept[now]);
-					if (shift){
-						k = g - 1;
-						break;
-					}
-				}
-			}
-		}
-		return 0;
-	}
-private:
 	void dfsAddEdge(int &rootPoint, int currentPoint){
 		//transfer accept value
-		if (NFAaccept[currentPoint])NFAaccept[rootPoint] = NFAaccept[rootPoint];
+		if (NFAs.acc[currentPoint])NFAs.acc[rootPoint] = NFAs.acc[rootPoint];
 		//add edge from rootPoint to the point that can reach through epsilon
-		for (edge *i = e[currentPoint]; i != nullptr; i = i->prev){
-			if (i->v != 0) NFA.addEdge(rootPoint, i->t, i->v);
+		for (edge *i = NFAs.e[currentPoint]; i != nullptr; i = i->prev){
+			if (i->v != 0) NFAs.addEdge(rootPoint, i->t, i->v);
 			else dfsAddEdge(rootPoint, i->t);
 		}
 	}
@@ -430,7 +377,30 @@ private:
 		if (currentEdge->prev != nullptr) dfsDeleteEpsilonEdge(currentEdge->prev);
 		delete currentEdge;
 	}
-	bool check(){
+	void popStack(vector<GraphPart> &s, vector<ope> &o){
+		//pop the first priority operator
+		switch (*(o.end() - 1)){
+		case ope::and:
+			*(s.end() - 2) = mergeGraph(0, *(s.end() - 2), *(s.end() - 1));
+			s.pop_back();
+			break;
+		case ope::or:
+			*(s.end() - 2) = mergeGraph(1, *(s.end() - 2), *(s.end() - 1));
+			s.pop_back();
+			break;
+		case ope::rep:
+			*(s.end() - 1) = repeatGraph(0, *(s.end() - 1));
+			break;
+		case ope::prep:
+			*(s.end() - 1) = repeatGraph(1, *(s.end() - 1));
+			break;
+		case ope::able:
+			NFAs.addEdge((s.end() - 1)->begin, (s.end() - 1)->end, 0);
+			break;
+		}
+		o.pop_back();
+	};
+	bool check(string &reg){
 		//binary operator rule check
 		for (auto i = 0; i <= reg.length() - 1; i++){
 			if (reg[i] == '\\'&&i == reg.length() - 1)return 0;
@@ -442,7 +412,7 @@ private:
 			if (reg[i] == '*' || reg[i] == '?')
 			if (i == 0)return 0;
 			if (reg[i] == '(')
-			if (reg[i + 1] == ')' || reg[i + 1] == '|' || reg[i + 1] == '*' || reg[i + 1] == '?')return 0;
+				if (reg[i + 1] == ')' || reg[i + 1] == '|' || reg[i + 1] == '*' || reg[i + 1] == '?')return 0;
 		}
 		//backet match check
 		int now = 0;
@@ -454,15 +424,57 @@ private:
 		if (now != 0)return 0;
 		return 1;
 	}
-	int POINT;
-	string reg;
-	
-	Dfa DFA;
+	GraphPart addGraph(char x){
+		int begin = NFAs.get();
+		int end = NFAs.get();
+		NFAs.addEdge(begin, end, x);
+		return GraphPart(begin, end);
+	}
+	GraphPart mergeGraph(bool plan, GraphPart &a, GraphPart &b){
+		if (plan){
+			//or
+			int begin = NFAs.get();
+			int end = NFAs.get();
+			NFAs.addEdge(begin, a.begin, 0);
+			NFAs.addEdge(begin, b.begin, 0);
+			NFAs.addEdge(a.end, end, 0);
+			NFAs.addEdge(b.end, end, 0);
+			return GraphPart(a.begin, b.end);
+		}
+		else{
+			//and
+			NFAs.addEdge(a.end, b.begin, 0);
+			return GraphPart(a.begin, b.end);
+		}
+	}
+	GraphPart repeatGraph(bool plan, GraphPart &a){
+		int begin = NFAs.get();
+		int end = NFAs.get();
+		//rep
+		if (plan){
+			//prep
+			NFAs.addEdge(begin, a.begin, 0);
+			NFAs.addEdge(a.end, end, 0);
+			NFAs.addEdge(a.end, a.begin, 0);
+			return GraphPart(a.begin, a.end);
+		}
+		else{
+			//rep
+			NFAs.addEdge(begin, a.begin, 0);
+			NFAs.addEdge(a.end, end, 0);
+			NFAs.addEdge(begin, end, 0);
+			NFAs.addEdge(a.end, a.begin, 0);
+			return GraphPart(a.begin, a.end);
+		}
+
+	}
 	map<int, vector<MatchRule>> checkList;
-	public:
-Graph NFA;
-	int NFAaccept[POINT_MAX];
-	int DFAaccept[POINT_MAX];
+	Graph NFAs, DFA;
+	GraphPart NFA;
+	bool greedy = 0;
+	bool shift = 0;
+	bool hasRule = 0;
+	bool isReady = 0;
 };
 
 /*
